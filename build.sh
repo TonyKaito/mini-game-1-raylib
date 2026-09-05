@@ -6,4 +6,4 @@ set -xe
 CFLAGS="-Wall -Wextra -I./raylib/include"
 LIBS="-L./raylib/lib -lraylib -lopengl32 -lgdi32 -lwinmm"
 	
-gcc $CFLAGS main.c -o main.exe $LIBS
+gcc $CFLAGS *.c -o main.exe $LIBS

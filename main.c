@@ -308,7 +308,7 @@ void addBullet(GameData* gameData, Vector2 bulletSpawnPos, Color bulletColor, Ve
 			Pattern pattern = gameData->patterns[p_ind];
 			for (int j = 0; j < pattern.bulletCallback.count; ++j) // pattern.bulletCallback array size
 			{
-				if (gameData->bulletTimerCallback[j] != NULL) addBulletTimer(gameData, ind, pattern.bulletCallback.items[j], pattern.bulletTimerCooldown.items[j]);
+				if (pattern.bulletCallback.items[j] != NULL) addBulletTimer(gameData, ind, pattern.bulletCallback.items[j], pattern.bulletTimerCooldown.items[j]);
 			}
 		}
 	}
@@ -378,7 +378,7 @@ void removePattern(GameData* gameData, int ind)
 	while(j < gameData->activePatternTimerCount)
 	{
 		int timerId = gameData->activePatternTimerId[j];
-		if(gameData->patternTimerPatternRef[timerId] == j)
+		if(gameData->patternTimerPatternRef[timerId] == ind)
 		{
 			removePatternTimer(gameData, timerId);
 		}
@@ -399,8 +399,8 @@ void removePattern(GameData* gameData, int ind)
 	}
 	gameData->activePatternCount = count;
 	
-	gameData->inactivePatternId[gameData->inactiveBulletCount] = ind;
-	gameData->inactiveBulletCount += 1;
+	gameData->inactivePatternId[gameData->inactivePatternCount] = ind;
+	gameData->inactivePatternCount += 1;
 	printf("Note(kt): UNIMPLEMENTED removePattern\n");
 	return;
 }
@@ -412,7 +412,7 @@ void addEnemy(GameData* gameData, Vector2 position, uint64_t enemyPatternBitfiel
 	int ind = gameData->inactiveEnemyId[gameData->inactiveEnemyCount];
 	
 	// add to activeEnemyId
-	gameData->activeEnemyId[gameData->activeBulletCount] = ind;
+	gameData->activeEnemyId[gameData->activeEnemyCount] = ind;
 	gameData->activeEnemyCount += 1;
 	
 	// add the fields
@@ -425,7 +425,7 @@ void removeEnemy(GameData* gameData, int ind)
 	int count = 0;
 	for (int i = 0; i < gameData->activeEnemyCount; ++i)
 	{
-		if (gameData->activeEnemyId[i] != count)
+		if (gameData->activeEnemyId[i] != ind)
 		{
 			gameData->activeEnemyId[count] = gameData->activeEnemyId[i];
 			count += 1;
@@ -558,31 +558,27 @@ void drawPlayer(GameData gameData)
 TEST CALLBACK FUNCTIONS
 */
 
-// pattern 1 (unused)
-void pattern_1_callback(GameData* gameData, int bulletId)
+void timer_2testa_callback(GameData* gameData, int bulletTimerId)
 {
-	float elapsed = GetElapsed(gameData->bulletTimers[bulletId]);
-	int seconds = (int)elapsed;
+	int bulletId = gameData->bulletTimerBulletRef[bulletTimerId];
 	
-	// printf("%d: %f\n", bulletId, GetElapsed(gameData->bulletTimer[bulletId]));
-	if ((seconds % 4 == 1) && (elapsed - seconds < 0.0166f))
-	{
-		Vector2 curVel = {
-			.x = cosf(30 * DEG2RAD) * gameData->bulletVel[bulletId].x - sinf(30 * DEG2RAD) * gameData->bulletVel[bulletId].y,
-			.y = sinf(30 * DEG2RAD) * gameData->bulletVel[bulletId].x + cosf(30 * DEG2RAD) * gameData->bulletVel[bulletId].y,
-		};
-		gameData->bulletVel[bulletId] = curVel;
-	}
-}
-
-// unused
-void pattern_1(GameData* gameData, int bulletId)
-{
-	pattern_1_callback(gameData, bulletId);
+	Vector2 curVel = {
+		.x = cosf(30 * DEG2RAD) * gameData->bulletVel[bulletId].x - sinf(30 * DEG2RAD) * gameData->bulletVel[bulletId].y,
+		.y = sinf(30 * DEG2RAD) * gameData->bulletVel[bulletId].x + cosf(30 * DEG2RAD) * gameData->bulletVel[bulletId].y,
+	};
+	gameData->bulletVel[bulletId] = curVel;
+	
+	float resetLifetime = 500.0f;
+	Timer timer;
+	StartTimer(&timer, resetLifetime);
+	gameData->bulletTimers[bulletTimerId] = timer;
 }
 
 void timer_1test_callback(GameData* gameData, int patternTimerId)
 {
+	int patternId = gameData->patternTimerPatternRef[patternTimerId];
+	
+	
 	Vector2 enemyPosition = {
 		.x = (float)SCREEN_WIDTH/2,
 		.y = (float)SCREEN_HEIGHT*1/4,
@@ -609,25 +605,16 @@ void timer_1test_callback(GameData* gameData, int patternTimerId)
 			Color bulletColor = (row%2 == 0) ? RED : BLUE;
 			
 			float bulletInitDirection = gameData->patterns[0].baseAngle + (row * degreesPerRow);
-	
-			// if (TimerDone(gameData.timers[1]))
-			// {
-			// 	float resetLifetime2 = gameData.timers[1].lifeTime;
-			// 	Timer timer2;
-			// 	StartTimer(&timer2, resetLifetime2);
-			// 	gameData.timers[1] = timer2;
-			// 	
-			// 	speed_mod = !speed_mod;
-			// }
 			
 			Vector2 bulletInitVel = {
 				.x = (gameData->patterns[0].bulletSpeed * cosf(bulletInitDirection * DEG2RAD)),
 				.y = (gameData->patterns[0].bulletSpeed * sinf(bulletInitDirection * DEG2RAD)),
 			};
 			
+			
 			// printf("bullet Added\n");
-			addBullet(gameData, bulletSpawnPos, RED, bulletInitVel, 0);
-			addBullet(gameData, bulletSpawnPos2, BLUE, bulletInitVel, 1);
+			addBullet(gameData, bulletSpawnPos, RED, bulletInitVel, (1 << patternId));
+			addBullet(gameData, bulletSpawnPos2, BLUE, bulletInitVel, 0);
 			
 		}
 	}
@@ -660,10 +647,10 @@ int main(void)
 	static GameData gameData = {0};
 	
 	// test adding 1 test callback, only blue bullets should call this
-	gameData.activePatternCount = 1;
-	gameData.patternId[0] = 0;
-	gameData.activePatternId[0] = 0;
-	gameData.patternTimerCallback[0] = pattern_1_callback;
+	// gameData.activePatternCount = 1;
+	// gameData.patternId[0] = 0;
+	// gameData.activePatternId[0] = 0;
+	// gameData.patternTimerCallback[0] = pattern_1_callback;
 	
 	
 	InitGameData(&gameData);
@@ -693,34 +680,11 @@ int main(void)
 	da_append(pattern_test.patternTimerCooldown, 0.16f);
 	da_append(pattern_test.patternCallback, timer_1testb_callback);
 	
-	// pattern_test.bulletTimerCooldown[2] = 3.0f;
-	// pattern_test.bulletCallback[2] = timer_1test_callback;
+	da_append(pattern_test.bulletTimerCooldown, 2.0f);
+	da_append(pattern_test.bulletCallback, timer_2testa_callback);
 	
 	// Add pattern
 	addPattern(&gameData, pattern_test);
-	// gameData.patternId[0] = 0;
-	// gameData.patterns[0] = pattern_test;
-	
-	
-	// Add patternTimer
-	// addPatternTimer(&gameData, 0, gameData.patterns[0].patternCallback.items[0], gameData.patterns[0].patternTimerCooldown.items[0]);
-	// addPatternTimer(&gameData, 1, gameData.patterns[0].patternCallback.items[1], gameData.patterns[0].patternTimerCooldown.items[1]);
-	
-	// gameData.patternTimerId[0] = 0;
-	// gameData.activePatternTimerId[gameData.activePatternTimerCount] = 0;
-	// Timer timer;
-	// StartTimer(&timer, gameData.patterns[0].patternTimerCooldown.items[0]);
-	// gameData.patternTimers[gameData.activePatternTimerCount] = timer;
-	// gameData.patternTimerCallback[gameData.activePatternTimerCount] = gameData.patterns[0].patternCallback.items[0];
-	// gameData.activePatternTimerCount++;
-	
-	// gameData.patternTimerId[1] = 1;
-	// gameData.activePatternTimerId[gameData.activePatternTimerCount] = 1;
-	// Timer timer2;
-	// StartTimer(&timer2, gameData.patterns[0].patternTimerCooldown.items[1]);
-	// gameData.patternTimers[gameData.activePatternTimerCount] = timer2;
-	// gameData.patternTimerCallback[gameData.activePatternTimerCount] = gameData.patterns[0].patternCallback.items[1];
-	// gameData.activePatternTimerCount++;
 	
 	// enemy movement test
 	float test = 1;
@@ -741,6 +705,9 @@ int main(void)
 		else if(IsKeyDown(KEY_UP)) gameData.playerPos.y -= 3.5f - (1.5f * slowdown);
 		
 		// run all the patternTimer Callbacks
+		// printf("Goin' in\n");
+		
+		// printf("TESTING: get bulletTimerCount %d\n", gameData.activePatternTimerCount);
 		for (int i = 0; i < gameData.activePatternTimerCount; ++i)
 		{
 			// printf("test %d\n", i);
@@ -753,8 +720,8 @@ int main(void)
 				// printf("Probably not...?\n");
 			}
 		}
-		
 		// run all the bulletTimer Callbacks
+		// printf("TESTING: get bulletTimerCount %d\n", gameData.activeBulletTimerCount);
 		for (int i = 0; i < gameData.activeBulletTimerCount; ++i)
 		{
 			int ind = gameData.activeBulletTimerId[i];

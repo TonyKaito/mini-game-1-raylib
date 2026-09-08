@@ -83,7 +83,7 @@ struct GameData {
 	Vector2 bulletVel[MAX_BULLETS];
 	// Vector2 bulletAcc[MAX_BULLETS];
 	float bulletRad[MAX_BULLETS];
-	uint64_t bulletPatternBitfield[MAX_BULLETS]; // acts as 2d array of booleans, might only need one pattern ngl, seems 1:N
+	uint64_t bulletPatternBitfield[MAX_BULLETS]; // acts as 2d array of booleans, though might only need one pattern ngl, seems 1 pattern : N bullets
 	// Timer bulletTimer[MAX_BULLETS];
 	
 	// // not sure if this is the better way to do it rather than bulletFromSubPattern, given maybe it will have a decent amount less
@@ -105,7 +105,6 @@ struct GameData {
 	int activeEnemyCount;
 	int activeEnemyId[MAX_ENEMIES];
 	Vector2 enemyPos[MAX_ENEMIES];
-	uint64_t enemyPatternBitfield[MAX_ENEMIES];
 	
 	// enemy Anim
 	// int enemyTex[MAX_ENEMIES];
@@ -124,6 +123,11 @@ struct GameData {
 	Pattern patterns[MAX_PATTERNS];
 	// uint64_t patternTimerBitfield[MAX_PATTERNS]; // acts as 2d array of booleans
 	// void (*patternCallback[MAX_PATTERNS])(GameData*, int);
+	int patternEnemyRef[MAX_PATTERNS]; 
+	// Note(kt): An enemy should only have one corresponding pattern (multiple callbacks/subpatterns though) -> 1 pattern : N enemies
+	// or are they 1:1 even...? if 2 enemies have same "pattern", but with different time offsets, then technically the patterns should be separate, even though it's a copy?
+	// I think I will allow for 1:1 with duplication, but keep in mind what is mutable and what isn't (rn, only the callbacks itself I think aren't all that mutable, should be known at tool time)
+	// i think pattern fundamentally depends on the enemy, rather than the other way around. a pattern's source point is based on enemy for example.
 	
 	int inactivePatternCount;
 	int inactivePatternId[MAX_PATTERNS]; // acts as stack
@@ -349,7 +353,7 @@ void removeBullet(GameData* gameData, int ind)
 	return;
 }
 
-void addPattern(GameData* gameData, Pattern pattern)
+void addPattern(GameData* gameData, int enemyId, Pattern pattern) //, Vector2 enemyPos
 {
 	// remove from inactive stack
 	gameData->inactivePatternCount -= 1;
@@ -360,6 +364,7 @@ void addPattern(GameData* gameData, Pattern pattern)
 	gameData->activePatternCount += 1;
 	
 	// add the Fields
+	gameData->patternEnemyRef[ind] = enemyId;
 	gameData->patterns[ind] = pattern;
 	
 	// create the timers
@@ -367,6 +372,7 @@ void addPattern(GameData* gameData, Pattern pattern)
 	{
 		addPatternTimer(gameData, ind, pattern.patternCallback.items[i], pattern.patternTimerCooldown.items[i]);
 	}
+	
 	printf("Note(kt): TEST addPattern\n");
 	return;
 }
@@ -401,11 +407,11 @@ void removePattern(GameData* gameData, int ind)
 	
 	gameData->inactivePatternId[gameData->inactivePatternCount] = ind;
 	gameData->inactivePatternCount += 1;
-	printf("Note(kt): UNIMPLEMENTED removePattern\n");
+	printf("Note(kt): TEST removePattern\n");
 	return;
 }
 
-void addEnemy(GameData* gameData, Vector2 position, uint64_t enemyPatternBitfield)
+void addEnemy(GameData* gameData, Vector2 position, Pattern pattern)
 {
 	// remove from inactiveEnemyId stack
 	gameData->inactiveEnemyCount -= 1;
@@ -417,7 +423,9 @@ void addEnemy(GameData* gameData, Vector2 position, uint64_t enemyPatternBitfiel
 	
 	// add the fields
 	gameData->enemyPos[ind] = position;
-	gameData->enemyPatternBitfield[ind] = enemyPatternBitfield;
+	
+	addPattern(gameData, ind, pattern);
+	printf("Note(kt): TEST addEnemy\n");
 }
 
 void removeEnemy(GameData* gameData, int ind)
@@ -436,6 +444,7 @@ void removeEnemy(GameData* gameData, int ind)
 	
 	gameData->inactiveEnemyId[gameData->inactiveEnemyCount] = ind;
 	gameData->inactiveEnemyCount += 1;
+	printf("Note(kt): TEST removeEnemy\n");
 }
 
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> SPECIFIC BEHAVIORS
@@ -577,16 +586,17 @@ void timer_2testa_callback(GameData* gameData, int bulletTimerId)
 void timer_1test_callback(GameData* gameData, int patternTimerId)
 {
 	int patternId = gameData->patternTimerPatternRef[patternTimerId];
+	int enemyId = gameData->patternEnemyRef[patternId];
 	
-	
-	Vector2 enemyPosition = {
-		.x = (float)SCREEN_WIDTH/2,
-		.y = (float)SCREEN_HEIGHT*1/4,
-	};
-	Vector2 enemyPosition2 = {
-		.x = (float)SCREEN_WIDTH/2,
-		.y = (float)SCREEN_HEIGHT*1/2,
-	};
+	Vector2 enemyPosition = gameData->enemyPos[enemyId];
+	// Vector2 enemyPosition = {
+		// .x = (float)SCREEN_WIDTH/2,
+		// .y = (float)SCREEN_HEIGHT*1/4,
+	// };
+	// Vector2 enemyPosition2 = {
+		// .x = (float)SCREEN_WIDTH/2,
+		// .y = (float)SCREEN_HEIGHT*1/2,
+	// };
 	
 	float resetLifetime = gameData->patternTimers[patternTimerId].lifeTime;
 	Timer timer;
@@ -595,47 +605,48 @@ void timer_1test_callback(GameData* gameData, int patternTimerId)
 	
 	//spawnCooldownTimer = gameData.patterns[0].PatternCooldown[0];
 	
-	float degreesPerRow = 360.0f / gameData->patterns[0].bulletRows;
-	for (int row = 0; row < gameData->patterns[0].bulletRows; ++row)
+	float degreesPerRow = 360.0f / gameData->patterns[patternId].bulletRows;
+	for (int row = 0; row < gameData->patterns[patternId].bulletRows; ++row)
 	{
 		if (gameData->activeBulletCount < MAX_BULLETS)
 		{
 			Vector2 bulletSpawnPos = enemyPosition;
-			Vector2 bulletSpawnPos2 = enemyPosition2;
-			Color bulletColor = (row%2 == 0) ? RED : BLUE;
+			// Vector2 bulletSpawnPos2 = enemyPosition2;
+			Color bulletColor = (row%4 == 0) ? RED : BLUE;
 			
 			float bulletInitDirection = gameData->patterns[0].baseAngle + (row * degreesPerRow);
 			
 			Vector2 bulletInitVel = {
-				.x = (gameData->patterns[0].bulletSpeed * cosf(bulletInitDirection * DEG2RAD)),
-				.y = (gameData->patterns[0].bulletSpeed * sinf(bulletInitDirection * DEG2RAD)),
+				.x = (gameData->patterns[patternId].bulletSpeed * cosf(bulletInitDirection * DEG2RAD)),
+				.y = (gameData->patterns[patternId].bulletSpeed * sinf(bulletInitDirection * DEG2RAD)),
 			};
 			
 			
 			// printf("bullet Added\n");
-			addBullet(gameData, bulletSpawnPos, RED, bulletInitVel, (1 << patternId));
-			addBullet(gameData, bulletSpawnPos2, BLUE, bulletInitVel, 0);
+			addBullet(gameData, bulletSpawnPos, bulletColor, bulletInitVel, (1 << patternId));
 			
 		}
 	}
 	
-	gameData->patterns[0].baseAngle += gameData->patterns[0].angleIncrement;
+	gameData->patterns[patternId].baseAngle += gameData->patterns[patternId].angleIncrement;
 }
 
 void timer_1testb_callback(GameData* gameData, int patternTimerId)
 {
+	int patternId = gameData->patternTimerPatternRef[patternTimerId];
+	
 	float resetLifetime = gameData->patternTimers[patternTimerId].lifeTime;
 	Timer timer;
 	StartTimer(&timer, resetLifetime);
 	gameData->patternTimers[patternTimerId] = timer;
 	
-	if (gameData->patterns[0].bulletSpeed == 3.0f)
+	if (gameData->patterns[patternId].bulletSpeed == 3.0f)
 	{
-		gameData->patterns[0].bulletSpeed = 1.5f;
+		gameData->patterns[patternId].bulletSpeed = 1.5f;
 	}
 	else
 	{
-		gameData->patterns[0].bulletSpeed = 3.0f;
+		gameData->patterns[patternId].bulletSpeed = 3.0f;
 	}
 }
 
@@ -683,8 +694,12 @@ int main(void)
 	da_append(pattern_test.bulletTimerCooldown, 2.0f);
 	da_append(pattern_test.bulletCallback, timer_2testa_callback);
 	
-	// Add pattern
-	addPattern(&gameData, pattern_test);
+	// add the enemy with the pattern
+	addEnemy(&gameData, enemyPosition2, pattern_test);
+	addEnemy(&gameData, enemyPosition, pattern_test);
+	
+	// // Add pattern
+	// addPattern(&gameData, pattern_test);
 	
 	// enemy movement test
 	float test = 1;
